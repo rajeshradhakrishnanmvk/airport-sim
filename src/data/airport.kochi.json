@@ -1,0 +1,57 @@
+{
+  "id": "kochi",
+  "name": "Kochi Airport",
+  "runways": [
+    {
+      "id": "RWY09",
+      "name": "Runway 09",
+      "type": "runway",
+      "length": 3000,
+      "heading": 90,
+      "position": { "x": 0, "y": 0, "z": 0 },
+      "holdShortNodeId": "HP_RWY09"
+    }
+  ],
+  "taxiways": [
+    {
+      "id": "TWY_A",
+      "name": "Taxiway A",
+      "type": "taxiway",
+      "position": { "x": 0, "y": 0, "z": 0 },
+      "segments": [
+        { "id": "TWY_A_GA", "from": "GATE_A", "to": "WP_A", "length": 110 },
+        { "id": "TWY_A_GB", "from": "GATE_B", "to": "WP_A", "length": 130 },
+        { "id": "TWY_A_HOLD", "from": "WP_A", "to": "HP_RWY09", "length": 180 }
+      ]
+    },
+    {
+      "id": "TWY_B",
+      "name": "Taxiway B",
+      "type": "taxiway",
+      "position": { "x": 0, "y": 0, "z": 0 },
+      "segments": [
+        { "id": "TWY_B_GC", "from": "GATE_C", "to": "WP_B", "length": 160 },
+        { "id": "TWY_B_GD", "from": "GATE_D", "to": "WP_B", "length": 175 }
+      ]
+    }
+  ],
+  "gates": [
+    { "id": "GATE_A", "name": "Gate A", "type": "gate", "terminal": "Terminal 1", "position": { "x": 10, "y": 0, "z": 10 } },
+    { "id": "GATE_B", "name": "Gate B", "type": "gate", "terminal": "Terminal 1", "position": { "x": 20, "y": 0, "z": 8 } },
+    { "id": "GATE_C", "name": "Gate C", "type": "gate", "terminal": "Terminal 2", "position": { "x": 10, "y": 0, "z": 30 } },
+    { "id": "GATE_D", "name": "Gate D", "type": "gate", "terminal": "Terminal 2", "position": { "x": 20, "y": 0, "z": 32 } }
+  ],
+  "waypoints": [
+    { "id": "WP_A", "name": "Waypoint A", "type": "waypoint", "position": { "x": 40, "y": 0, "z": 10 } },
+    { "id": "WP_B", "name": "Waypoint B", "type": "waypoint", "position": { "x": 40, "y": 0, "z": 30 } }
+  ],
+  "holdingPoints": [
+    {
+      "id": "HP_RWY09",
+      "name": "Hold Short RWY09",
+      "type": "holding-point",
+      "runwayId": "RWY09",
+      "position": { "x": 60, "y": 0, "z": 10 }
+    }
+  ]
+}
