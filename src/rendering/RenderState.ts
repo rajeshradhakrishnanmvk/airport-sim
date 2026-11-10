@@ -6,11 +6,13 @@ export interface AircraftSimulationState {
   callsign: string
   routeNodeIds: readonly string[]
   routeDistance: number
+  speed?: number
+  state?: string
 }
 
 export interface SimulationRenderState {
   airport: AirportDefinition
   graph: TaxiwayGraph
   aircraft: readonly AircraftSimulationState[]
-  activeAircraftId?: string
+  activeAircraftId: string | undefined
 }
