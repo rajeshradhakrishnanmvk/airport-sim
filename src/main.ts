@@ -10,16 +10,13 @@ import {
 } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { AirportDefinition } from './airport/AirportDefinition'
-import { TaxiwayGraph } from './airport/TaxiwayGraph'
 import {
   AirportRenderer,
   AircraftRenderer,
   CameraController,
-  getRouteLength,
-  type AircraftSimulationState,
   type CameraMode,
-  type SimulationRenderState
 } from './rendering'
+import { TrafficController } from './simulation/TrafficController'
 
 const appElement = document.querySelector<HTMLDivElement>('#app')
 
@@ -27,8 +24,12 @@ if (!appElement) {
   throw new Error('App root #app not found')
 }
 
+const appRoot = appElement
+
 const scene = new Scene()
-scene.background = new Color(0x87ceeb)
+const daySky = new Color(0x87ceeb)
+const nightSky = new Color(0x040812)
+scene.background = daySky.clone()
 
 const camera = new PerspectiveCamera(
   60,
@@ -41,7 +42,7 @@ camera.position.set(20, 20, 20)
 const renderer = new WebGLRenderer({ antialias: true })
 renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.setPixelRatio(window.devicePixelRatio)
-appElement.appendChild(renderer.domElement)
+appRoot.appendChild(renderer.domElement)
 
 const controls = new OrbitControls(camera, renderer.domElement)
 controls.target.set(30, 0, 12)
@@ -64,47 +65,69 @@ async function loadAirportDefinition(): Promise<AirportDefinition> {
   return (await response.json()) as AirportDefinition
 }
 
-interface AircraftRuntimeState extends AircraftSimulationState {
-  speed: number
-  routeLength: number
+interface SimulationUiElements {
+  controlsRoot: HTMLDivElement
+  hudRoot: HTMLDivElement
+  playPauseButton: HTMLButtonElement
+  resetButton: HTMLButtonElement
+  speedSelect: HTMLSelectElement
+  selectNextButton: HTMLButtonElement
 }
 
-class DemoSimulationState implements SimulationRenderState {
-  readonly graph: TaxiwayGraph
-  readonly aircraft: readonly AircraftRuntimeState[]
-  readonly activeAircraftId: string
+interface PlaybackControlsState {
+  paused: boolean
+  speedMultiplier: number
+}
 
-  constructor(readonly airport: AirportDefinition) {
-    this.graph = TaxiwayGraph.fromAirportDefinition(airport)
+function formatSimulationClock(simulationSeconds: number, dayDurationSeconds: number): string {
+  const cyclePosition = ((simulationSeconds % dayDurationSeconds) + dayDurationSeconds) % dayDurationSeconds
+  const hoursFloat = (cyclePosition / dayDurationSeconds) * 24
+  const hours = Math.floor(hoursFloat)
+  const minutes = Math.floor((hoursFloat - hours) * 60)
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
+}
 
-    const routes = [
-      this.graph.route('GATE_A', 'HP_RWY09'),
-      this.graph.route('GATE_B', 'HP_RWY09'),
-      this.graph.route('GATE_C', 'WP_B')
-    ].filter((route): route is string[] => route !== null)
+function createSimulationUi(appRoot: HTMLElement): SimulationUiElements {
+  const controlsRoot = document.createElement('div')
+  controlsRoot.className = 'sim-controls'
 
-    const aircraft: AircraftRuntimeState[] = routes.map((routeNodeIds, index) => {
-      const routeLength = getRouteLength(this.graph, routeNodeIds)
-      const speed = 18 + index * 4
-      return {
-        id: `AC_${index + 1}`,
-        callsign: `AS${index + 101}`,
-        routeNodeIds,
-        routeDistance: index * 35,
-        speed,
-        routeLength: Math.max(routeLength, 1)
-      }
-    })
+  const playPauseButton = document.createElement('button')
+  playPauseButton.type = 'button'
+  playPauseButton.textContent = 'Pause'
 
-    this.aircraft = aircraft
-    this.activeAircraftId = aircraft[0]?.id ?? 'AC_1'
+  const resetButton = document.createElement('button')
+  resetButton.type = 'button'
+  resetButton.textContent = 'Reset'
+
+  const selectNextButton = document.createElement('button')
+  selectNextButton.type = 'button'
+  selectNextButton.textContent = 'Next Aircraft'
+
+  const speedSelect = document.createElement('select')
+  speedSelect.setAttribute('aria-label', 'Simulation speed multiplier')
+  for (const value of [0.5, 1, 2, 4]) {
+    const option = document.createElement('option')
+    option.value = String(value)
+    option.textContent = `${value}x`
+    if (value === 1) {
+      option.selected = true
+    }
+    speedSelect.append(option)
   }
 
-  update(deltaSeconds: number): void {
-    const dynamicAircraft = this.aircraft as AircraftRuntimeState[]
-    for (const aircraft of dynamicAircraft) {
-      aircraft.routeDistance = (aircraft.routeDistance + aircraft.speed * deltaSeconds) % aircraft.routeLength
-    }
+  controlsRoot.append(playPauseButton, resetButton, selectNextButton, speedSelect)
+
+  const hudRoot = document.createElement('div')
+  hudRoot.className = 'sim-hud'
+  appRoot.append(controlsRoot, hudRoot)
+
+  return {
+    controlsRoot,
+    hudRoot,
+    playPauseButton,
+    resetButton,
+    speedSelect,
+    selectNextButton,
   }
 }
 
@@ -134,28 +157,114 @@ function wireCameraControls(cameraController: CameraController): void {
   })
 }
 
+function applyDayNightCycle(
+  simulation: TrafficController,
+  ambient: AmbientLight,
+  sunLight: DirectionalLight,
+): void {
+  const dayDuration = simulation.dayDurationSeconds
+  const cycle = (((simulation.simulationTimeSeconds % dayDuration) + dayDuration) % dayDuration) / dayDuration
+  const sunAngle = cycle * Math.PI * 2 - Math.PI / 2
+  const sunHeight = Math.sin(sunAngle)
+  const dayFactor = Math.max(0, Math.min(1, (sunHeight + 0.2) / 1.2))
+  scene.background = nightSky.clone().lerp(daySky, dayFactor)
+  ambient.intensity = 0.2 + dayFactor * 0.8
+  sunLight.intensity = 0.1 + dayFactor * 0.9
+  sunLight.position.set(Math.cos(sunAngle) * 45, 5 + Math.max(sunHeight, 0) * 40, Math.sin(sunAngle) * 35)
+}
+
+function refreshHud(simulation: TrafficController, hudRoot: HTMLElement, controls: PlaybackControlsState): void {
+  const snapshot = simulation.snapshotHud()
+  hudRoot.innerHTML = [
+    `<div><strong>Simulation Time:</strong> ${formatSimulationClock(snapshot.simulationTimeSeconds, simulation.dayDurationSeconds)}</div>`,
+    `<div><strong>Aircraft:</strong> ${snapshot.aircraftCount}</div>`,
+    `<div><strong>Playback:</strong> ${controls.paused ? 'Paused' : 'Running'} @ ${controls.speedMultiplier.toFixed(1)}x</div>`,
+    `<div><strong>Selected:</strong> ${snapshot.selectedAircraftCallsign ?? '-'}</div>`,
+    `<div><strong>State:</strong> ${snapshot.selectedAircraftState ?? '-'}</div>`,
+    `<div><strong>Speed:</strong> ${snapshot.selectedAircraftSpeed?.toFixed(1) ?? '-'} kt</div>`,
+    `<div><strong>Route:</strong> ${snapshot.selectedAircraftRoute ?? '-'}</div>`,
+  ].join('')
+}
+
 function renderLoop(
-  simulation: DemoSimulationState,
+  simulation: TrafficController,
   aircraftRenderer: AircraftRenderer,
-  cameraController: CameraController
+  cameraController: CameraController,
+  ui: SimulationUiElements
 ): void {
   const clock = new Clock()
+  const playbackState: PlaybackControlsState = {
+    paused: false,
+    speedMultiplier: 1,
+  }
+
+  ui.playPauseButton.addEventListener('click', () => {
+    playbackState.paused = !playbackState.paused
+    ui.playPauseButton.textContent = playbackState.paused ? 'Play' : 'Pause'
+  })
+
+  ui.speedSelect.addEventListener('change', () => {
+    const nextMultiplier = Number(ui.speedSelect.value)
+    if (Number.isFinite(nextMultiplier) && nextMultiplier > 0) {
+      playbackState.speedMultiplier = nextMultiplier
+    }
+  })
+
+  ui.resetButton.addEventListener('click', () => {
+    simulation.reset()
+    playbackState.paused = false
+    playbackState.speedMultiplier = 1
+    ui.playPauseButton.textContent = 'Pause'
+    ui.speedSelect.value = '1'
+    aircraftRenderer.sync(simulation.aircraft)
+    refreshHud(simulation, ui.hudRoot, playbackState)
+  })
+
+  ui.selectNextButton.addEventListener('click', () => {
+    const aircraft = simulation.aircraft
+    if (aircraft.length === 0) {
+      simulation.setSelectedAircraft(undefined)
+      return
+    }
+
+    const activeId = simulation.activeAircraftId
+    const currentIndex = aircraft.findIndex((entry) => entry.id === activeId)
+    const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % aircraft.length : 0
+    simulation.setSelectedAircraft(aircraft[nextIndex]?.id)
+  })
+
   function animate(): void {
     requestAnimationFrame(animate)
-    simulation.update(clock.getDelta())
+
+    const deltaSeconds = clock.getDelta()
+    const simulationStep = playbackState.paused ? 0 : deltaSeconds * playbackState.speedMultiplier
+    simulation.update(simulationStep)
+
     aircraftRenderer.sync(simulation.aircraft)
     cameraController.update(simulation)
+    applyDayNightCycle(simulation, ambientLight, directionalLight)
+    refreshHud(simulation, ui.hudRoot, playbackState)
     renderer.render(scene, camera)
   }
+  refreshHud(simulation, ui.hudRoot, playbackState)
   animate()
 }
 
 async function bootstrap(): Promise<void> {
   const airport = await loadAirportDefinition()
-  const simulation = new DemoSimulationState(airport)
+  const simulation = new TrafficController(airport, {
+    schedule: {
+      departureIntervalSeconds: 16,
+      arrivalIntervalSeconds: 18,
+    },
+    maxActiveAircraft: 10,
+    runwayOccupancySeconds: 9,
+    dayDurationSeconds: 240,
+  })
   const airportRenderer = new AirportRenderer(simulation.airport, simulation.graph)
   const aircraftRenderer = new AircraftRenderer(simulation.graph)
   const cameraController = new CameraController(camera, controls, aircraftRenderer)
+  const ui = createSimulationUi(appRoot)
   const defaultCameraMode: CameraMode = 'orbit'
   cameraController.setMode(defaultCameraMode)
 
@@ -163,7 +272,7 @@ async function bootstrap(): Promise<void> {
   scene.add(aircraftRenderer.group)
   aircraftRenderer.sync(simulation.aircraft)
   wireCameraControls(cameraController)
-  renderLoop(simulation, aircraftRenderer, cameraController)
+  renderLoop(simulation, aircraftRenderer, cameraController, ui)
 }
 
 bootstrap().catch((error: unknown) => {

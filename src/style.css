@@ -2,10 +2,55 @@
 body {
   margin: 0;
   height: 100%;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
 #app {
   width: 100vw;
   height: 100vh;
   overflow: hidden;
+  position: relative;
+}
+
+.sim-controls {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  display: flex;
+  gap: 0.5rem;
+  z-index: 10;
+}
+
+.sim-controls button,
+.sim-controls select {
+  border: 0;
+  border-radius: 0.4rem;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.9rem;
+  background: rgba(20, 28, 40, 0.88);
+  color: #f3f6ff;
+}
+
+.sim-controls button {
+  cursor: pointer;
+}
+
+.sim-controls button:hover,
+.sim-controls select:hover {
+  background: rgba(40, 52, 72, 0.95);
+}
+
+.sim-hud {
+  position: absolute;
+  left: 1rem;
+  top: 1rem;
+  width: min(32rem, calc(100vw - 2rem));
+  border-radius: 0.55rem;
+  padding: 0.65rem 0.8rem;
+  background: rgba(10, 16, 28, 0.73);
+  color: #eaf0ff;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  z-index: 10;
+  backdrop-filter: blur(2px);
 }
