@@ -1,12 +1,11 @@
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import type { AirportDefinition } from './AirportDefinition'
 import { TaxiwayGraph } from './TaxiwayGraph'
 
 function loadAirportDefinition(): AirportDefinition {
-  const filePath = join(process.cwd(), 'src', 'data', 'airport.kochi.json')
+  const filePath = new URL('../data/airport.kochi.json', import.meta.url)
   return JSON.parse(readFileSync(filePath, 'utf8')) as AirportDefinition
 }
 
